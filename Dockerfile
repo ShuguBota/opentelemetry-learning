@@ -4,8 +4,8 @@ WORKDIR /app
 
 EXPOSE 8080
 
+# OpenTelemetry Java agent example, linking it to the jar of the application
 COPY opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar
-
 ENV JAVA_TOOL_OPTIONS="-javaagent:/app/opentelemetry-javaagent.jar"
 ENV OTEL_TRACES_EXPORTER="logging"
 ENV OTEL_METRICS_EXPORTER="logging"
