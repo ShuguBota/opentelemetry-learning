@@ -4,10 +4,11 @@ services:
       context: .
     ports:
       - "8080:8080"
-    environment:
-      - JAVA_TOOL_OPTIONS=-javaagent:/app/opentelemetry-javaagent.jar
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - OTEL_SERVICE_NAME=otel-java-app
+    # environment:
+    #   # OpenTelemetry Java Agent configuration
+    #   # - JAVA_TOOL_OPTIONS=-javaagent:/app/opentelemetry-javaagent.jar
+    #   # - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 # OTLP HTTP endpoint of the Collector, default for agent
+    #   # - OTEL_SERVICE_NAME=otel-java-app
     networks:
      - otel-network
 
@@ -37,6 +38,15 @@ services:
       - "14268:14268"
       - "14269:14269"
       - "9411:9411"
+    networks:
+      - otel-network
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
     networks:
       - otel-network
 
