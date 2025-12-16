@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -137,14 +138,26 @@ public class RollController {
     span.makeCurrent();
     context = Context.current().with(span);
 
+    // Use baggage to propagate player information alongside the trace
+    // To propagate baggage across service boundaries, you would need to inject it into the request headers
+    Baggage userBaggage = Baggage.builder()
+        .put("player.name", player.orElse("Anonymous"))
+        .build();
+    
+    context = Context.current().with(userBaggage);
+
     Dice dice = new Dice();
 
     int result = dice.roll(1, 6);
 
+    // Extract baggage value for logging
+    // It doesn't show up in the attributes automatically, so we log it manually
+    String playerName = Baggage.fromContext(context).getEntryValue("player.name");
+
     if (player.isPresent()) {
-      logger.info("{} is rolling the dice: {}", player.get(), result);
+      logger.info("{} is rolling the dice: {} [baggage: player.name={}]", player.get(), result, playerName);
     } else {
-      logger.info("Anonymous player is rolling the dice: {}", result);
+      logger.info("Anonymous player is rolling the dice: {} [baggage: player.name={}]", result, playerName);
     }
 
     work();
@@ -166,6 +179,9 @@ public class RollController {
     // W3CTraceContextPropagator propagator = W3CTraceContextPropagator.getInstance();
     // propagator.inject(context, httpPost, HTTPPost::setHeader);
     // You do not need the propagator if you use the Java agent
+
+    // Baggage example
+    // W3CBaggagePropagator.getInstance().inject(context, httpPost, HTTPPost::setHeader);
 
     try {
       logger.info("Doing some work...");
