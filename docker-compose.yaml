@@ -4,11 +4,11 @@ services:
       context: .
     ports:
       - "8080:8080"
-    # environment:
-    #   # OpenTelemetry Java Agent configuration
-    #   # - JAVA_TOOL_OPTIONS=-javaagent:/app/opentelemetry-javaagent.jar
-    #   # - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 # OTLP HTTP endpoint of the Collector, default for agent
-    #   # - OTEL_SERVICE_NAME=otel-java-app
+    environment:
+      # OpenTelemetry Java Agent configuration
+      - JAVA_TOOL_OPTIONS=-javaagent:/app/opentelemetry-javaagent.jar
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 # OTLP HTTP endpoint of the Collector, default for agent
+      - OTEL_SERVICE_NAME=otel-java-app
     networks:
      - otel-network
 

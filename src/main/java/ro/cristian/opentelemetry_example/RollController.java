@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
@@ -48,7 +49,8 @@ public class RollController {
 
   
   public RollController() {
-    OpenTelemetry openTelemetry = initOpenTelemetry();
+    // OpenTelemetry openTelemetry = initOpenTelemetry();
+    OpenTelemetry openTelemetry = GlobalOpenTelemetry.get();
 
     this.meter = openTelemetry.getMeter(INSTRUMENTATION_NAME);
     this.requestCounter = meter.counterBuilder("dice_roll_requests")
@@ -64,6 +66,11 @@ public class RollController {
     SLF4JBridgeHandler.install();
   }
 
+  /**
+   * Initialize OpenTelemetry SDK with OTLP exporters for metrics, traces, and logs.
+   * If you use the OpenTelemetry Java Agent, this initialization is not needed as the agent
+   * handles it automatically.
+   */
   static OpenTelemetry initOpenTelemetry() {
     Resource resource = Resource.create(Attributes.of(AttributeKey.stringKey("service.name"),"otel-java-app-code"));
 
@@ -158,6 +165,7 @@ public class RollController {
     // e.g.
     // W3CTraceContextPropagator propagator = W3CTraceContextPropagator.getInstance();
     // propagator.inject(context, httpPost, HTTPPost::setHeader);
+    // You do not need the propagator if you use the Java agent
 
     try {
       logger.info("Doing some work...");
