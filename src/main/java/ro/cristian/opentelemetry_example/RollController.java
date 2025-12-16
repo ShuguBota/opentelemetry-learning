@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,9 +18,13 @@ import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.exporter.otlp.logs.OtlpGrpcLogRecordExporter;
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter;
 import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
+import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.logs.SdkLoggerProvider;
+import io.opentelemetry.sdk.logs.export.BatchLogRecordProcessor;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import io.opentelemetry.sdk.resources.Resource;
@@ -39,7 +44,6 @@ public class RollController {
   private final LongCounter requestCounter;
 
   private final Tracer tracer;
-
   private Context context;
 
   
@@ -53,6 +57,11 @@ public class RollController {
         .build();
 
     this.tracer = openTelemetry.getTracer(INSTRUMENTATION_NAME);
+
+    // Set up logging instrumentation
+    OpenTelemetryAppender.install(openTelemetry);
+    SLF4JBridgeHandler.removeHandlersForRootLogger();
+    SLF4JBridgeHandler.install();
   }
 
   static OpenTelemetry initOpenTelemetry() {
@@ -84,10 +93,24 @@ public class RollController {
         .addSpanProcessor(spanProcessor)
         .build();
 
+    // Logs
+    OtlpGrpcLogRecordExporter logExporter = OtlpGrpcLogRecordExporter.builder()
+        .setEndpoint(OTEL_EXPORTER_OTLP_ENDPOINT)
+        .build();
+
+    BatchLogRecordProcessor logRecordProcessor = BatchLogRecordProcessor.builder(logExporter).build();
+    
+    SdkLoggerProvider loggerProvider;
+      loggerProvider = SdkLoggerProvider.builder()
+              .setResource(resource)
+              .addLogRecordProcessor(logRecordProcessor)
+              .build();
+
     // Builidng the SDK
     OpenTelemetrySdk sdk = OpenTelemetrySdk.builder()
         .setMeterProvider(metricProvider)
         .setTracerProvider(tracerProvider)
+        .setLoggerProvider(loggerProvider)
         .build();
 
 
