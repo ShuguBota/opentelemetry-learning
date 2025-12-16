@@ -14,34 +14,53 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter;
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import io.opentelemetry.sdk.resources.Resource;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 
 @RestController
 public class RollController {
   private static final Logger logger = LoggerFactory.getLogger(RollController.class);
+  /**
+   * Same one as for the agent, but change from HTTP to gRPC
+   */
+  private final static String OTEL_EXPORTER_OTLP_ENDPOINT = "http://otel-collector:4317";
+  private final static String INSTRUMENTATION_NAME = RollController.class.getName();
+  
   private final Meter meter;
   private final LongCounter requestCounter;
+
+  private final Tracer tracer;
+
+  private Context context;
 
   
   public RollController() {
     OpenTelemetry openTelemetry = initOpenTelemetry();
 
-    this.meter = openTelemetry.getMeter(RollController.class.getName());
+    this.meter = openTelemetry.getMeter(INSTRUMENTATION_NAME);
     this.requestCounter = meter.counterBuilder("dice_roll_requests")
         .setDescription("Counts number of requests to /rolldice endpoint")
         .setUnit("1")
         .build();
+
+    this.tracer = openTelemetry.getTracer(INSTRUMENTATION_NAME);
   }
 
   static OpenTelemetry initOpenTelemetry() {
     Resource resource = Resource.create(Attributes.of(AttributeKey.stringKey("service.name"),"otel-java-app-code"));
 
+    // Metrics
     OtlpGrpcMetricExporter metricExporter = OtlpGrpcMetricExporter.builder()
-        .setEndpoint("http://otel-collector:4317") // Same one as for the agent, but change from HTTP to gRPC
+        .setEndpoint(OTEL_EXPORTER_OTLP_ENDPOINT)
         .build();
 
     PeriodicMetricReader periodicMetricReader = PeriodicMetricReader.builder(metricExporter)
@@ -51,12 +70,28 @@ public class RollController {
     SdkMeterProvider metricProvider = SdkMeterProvider.builder()
         .setResource(resource)
         .registerMetricReader(periodicMetricReader)
-        .build(); 
-
-    OpenTelemetrySdk sdk = OpenTelemetrySdk.builder()
-        .setMeterProvider(metricProvider)
         .build();
 
+    // Traces
+    OtlpGrpcSpanExporter spanExporter = OtlpGrpcSpanExporter.builder()
+        .setEndpoint(OTEL_EXPORTER_OTLP_ENDPOINT)
+        .build();
+
+    SimpleSpanProcessor spanProcessor = SimpleSpanProcessor.builder(spanExporter).build();
+
+    SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
+        .setResource(resource)
+        .addSpanProcessor(spanProcessor)
+        .build();
+
+    // Builidng the SDK
+    OpenTelemetrySdk sdk = OpenTelemetrySdk.builder()
+        .setMeterProvider(metricProvider)
+        .setTracerProvider(tracerProvider)
+        .build();
+
+
+    // Shutdown hook to ensure metrics are flushed before application exit
     Runtime.getRuntime().addShutdownHook(new Thread(sdk::close));
 
     return sdk;
@@ -65,6 +100,13 @@ public class RollController {
 
   @GetMapping("/rolldice")
   public String index(@RequestParam("player") Optional<String> player) {
+    logger.info("Received request to /rolldice endpoint");
+
+    // Starting a span
+    Span span = tracer.spanBuilder("roll_dice_operation").setNoParent().startSpan();
+    span.makeCurrent();
+    context = Context.current().with(span);
+
     Dice dice = new Dice();
 
     int result = dice.roll(1, 6);
@@ -75,8 +117,33 @@ public class RollController {
       logger.info("Anonymous player is rolling the dice: {}", result);
     }
 
+    work();
+
     requestCounter.add(1);
 
+    // Ending the span
+    span.end();
+
     return Integer.toString(result);
+  }
+
+  private void work() {
+    Span span = tracer.spanBuilder("work").setParent(context).startSpan();
+    context = Context.current().with(span);
+
+    // If you would want to send it to another application you would inject the context in the header
+    // e.g.
+    // W3CTraceContextPropagator propagator = W3CTraceContextPropagator.getInstance();
+    // propagator.inject(context, httpPost, HTTPPost::setHeader);
+
+    try {
+      logger.info("Doing some work...");
+      Thread.sleep(100);
+      logger.info("Work done.");
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+
+    span.end();
   }
 }
